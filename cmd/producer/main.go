@@ -51,7 +51,7 @@ func main() {
 	}
 	defer ch.Close()
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 1000000; i++ {
 		Publish(ch, GenerateOrder())
 		time.Sleep(time.Millisecond * 100)
 	}

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/maiconkeller/gointensivo/internal/order/infra/database"
 	"github.com/maiconkeller/gointensivo/internal/order/usecase"
@@ -33,9 +35,32 @@ func main() {
 	defer ch.Close()
 
 	out := make(chan amqp.Delivery) //channel
-	go rabbitmq.Consume(ch, out)    //Thread 2
 
-	for msg := range out {
+	go rabbitmq.Consume(ch, out) //Thread 2
+
+	qtdWorkers := 150
+	for i := 0; i < qtdWorkers; i++ {
+		go worker(out, uc, i)
+	}
+
+	// criando um server http para retornar o total de msgs lidas
+	
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		tUC := usecase.NewGetTotalUseCase(repository)
+		total, err := tUC.Execute()
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(err.Error()))
+		}
+		json.NewEncoder(w).Encode(total)
+	})
+
+	http.ListenAndServe(":8080", nil)
+
+}
+
+func worker(deliveryMessage <-chan amqp.Delivery, uc *usecase.CalculateFinalPriceUseCase, workerID int) {
+	for msg := range deliveryMessage {
 		var inputDTO usecase.OrderInputDTO
 
 		err := json.Unmarshal(msg.Body, &inputDTO)
@@ -47,7 +72,7 @@ func main() {
 			panic(err)
 		}
 		msg.Ack(false)
-		fmt.Println(outputDTO) //Thread 1
+		fmt.Printf("worker %d has processed order %s\n", workerID, outputDTO.ID)
+		time.Sleep(1 * time.Second)
 	}
-
 }
